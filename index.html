@@ -1,0 +1,872 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Supervisor Control Panel</title>
+  <link rel="icon" type="image/svg+xml" href="/favicon.svg">
+  <style>
+    *, *::before, *::after { box-sizing: border-box; }
+    body {
+      font-family: ui-monospace, 'Cascadia Code', 'Source Code Pro', monospace;
+      background: #0f1117;
+      color: #c9d1d9;
+      margin: 0;
+      padding: 1.5rem;
+    }
+    header { display: flex; align-items: center; gap: 1rem; margin-bottom: 0.75rem; }
+    h1 { font-size: 0.95rem; margin: 0; color: #8b949e; font-weight: 500; display: flex; align-items: center; gap: 0.4rem; white-space: nowrap; }
+    h1 a { color: #484f58; transition: color 0.15s; }
+    h1 a:hover { color: #8b949e; }
+    .summary { display: flex; gap: 1rem; font-size: 0.8rem; flex: 1; }
+    .summary-item { color: #8b949e; }
+    .summary-item span { font-weight: 600; color: #c9d1d9; }
+    .summary-item.running span { color: #3fb950; }
+    .last-updated { font-size: 0.78rem; color: #484f58; white-space: nowrap; }
+    .error { background: #3d1a1a; border: 1px solid #f85149; color: #f85149;
+             padding: 0.75rem 1rem; border-radius: 6px; margin-bottom: 1rem; }
+    table { width: 100%; border-collapse: collapse; font-size: 0.82rem; }
+    thead tr { background: #161b22; }
+    th { padding: 0.5rem 0.75rem; text-align: left; color: #8b949e;
+         border-bottom: 1px solid #21262d; white-space: nowrap; }
+    th.sortable { cursor: pointer; user-select: none; }
+    th.sortable:hover { color: #c9d1d9; }
+    th.sort-asc, th.sort-desc { color: #58a6ff; }
+    th.sortable::after { content: ' ⇅'; opacity: 0.3; font-size: 0.7rem; }
+    th.sort-asc::after  { content: ' ↑'; opacity: 1; }
+    th.sort-desc::after { content: ' ↓'; opacity: 1; }
+    td { padding: 0.28rem 0.75rem; border-bottom: 1px solid #21262d; vertical-align: middle; }
+    tr:hover td { background: #161b22; }
+    tr:has(.row-check:checked) td { background: #161f2e; }
+    tr:has(.row-check:checked):hover td { background: #1a2535; }
+    tr.running td:first-child { border-left: 3px solid #3fb950; }
+    tr.stopped td:first-child { border-left: 3px solid #30363d; }
+    tr.exited  td:first-child { border-left: 3px solid #bf7fff; }
+    tr.fatal   td:first-child { border-left: 3px solid #f85149; }
+    tr.running td:nth-child(2) { color: #3fb950; font-weight: 600; }
+    tr.stopped td:nth-child(2) { color: #8b949e; }
+    tr.exited  td:nth-child(2) { color: #bf7fff; }
+    tr.fatal   td:nth-child(2) { color: #f85149; font-weight: 600; }
+    @keyframes row-sweep {
+      0%   { background-position: 200% 0; }
+      100% { background-position: -200% 0; }
+    }
+    tr.pending {
+      background: linear-gradient(90deg, transparent 25%, rgba(139,148,158,0.07) 50%, transparent 75%);
+      background-size: 200% 100%;
+      animation: row-sweep 1.2s linear infinite;
+    }
+    tr.pending td { background: transparent !important; }
+    tr.pending td:first-child { border-left-color: #8b949e; }
+    tbody tr { cursor: pointer; }
+    .badge { padding: 0.15rem 0.5rem; border-radius: 20px; font-size: 0.75rem; font-weight: 600; }
+    .badge.running { background: #1a3a20; color: #3fb950; }
+    .badge.stopped { background: #21262d; color: #8b949e; }
+    .badge.exited  { background: #2d1a3a; color: #bf7fff; }
+    .badge.fatal   { background: #3d1a1a; color: #f85149; }
+    .desc { color: #8b949e; font-size: 0.78rem; }
+    .actions { white-space: nowrap; }
+    .btn { padding: 0.2rem 0.55rem; border: none; border-radius: 4px; font-size: 0.75rem;
+           font-family: inherit; cursor: pointer; font-weight: 600; margin-right: 0.25rem; }
+    .btn:disabled { opacity: 0.4; cursor: not-allowed; }
+    .btn-start   { background: #1a3a20; color: #3fb950; }
+    .btn-start:hover:not(:disabled)   { background: #2ea043; color: #fff; }
+    .btn-stop    { background: #3d1a1a; color: #f85149; }
+    .btn-stop:hover:not(:disabled)    { background: #b62324; color: #fff; }
+    .btn-restart { background: #1c2a3a; color: #58a6ff; }
+    .btn-restart:hover:not(:disabled) { background: #1f6feb; color: #fff; }
+
+    .btn-refresh, .btn-supervisord { background: #21262d; color: #8b949e; border: 1px solid #30363d; }
+    .btn-refresh:hover:not(:disabled), .btn-supervisord:hover:not(:disabled) { color: #c9d1d9; border-color: #8b949e; }
+    .btn-refresh:disabled, .btn-supervisord:disabled { opacity: 0.5; cursor: not-allowed; }
+    .bulk-actions { display: none; align-items: center; gap: 0.5rem; }
+    .bulk-actions.visible { display: flex; }
+    .bulk-count { font-size: 0.8rem; color: #8b949e; }
+    .bulk-count span { color: #c9d1d9; font-weight: 600; }
+    input[type=checkbox] {
+      appearance: none;
+      -webkit-appearance: none;
+      width: 14px;
+      height: 14px;
+      border: 1.5px solid #30363d;
+      border-radius: 3px;
+      background: transparent;
+      cursor: pointer;
+      vertical-align: middle;
+      margin-right: 0.4rem;
+      margin-top: -1px;
+      position: relative;
+      transition: border-color 0.1s, background 0.1s;
+      flex-shrink: 0;
+    }
+    input[type=checkbox]:hover { border-color: #58a6ff; }
+    input[type=checkbox]:checked {
+      background: #58a6ff;
+      border-color: #58a6ff;
+    }
+    input[type=checkbox]:indeterminate {
+      background: #1c2a3a;
+      border-color: #58a6ff;
+    }
+    input[type=checkbox]:checked::after {
+      content: '';
+      position: absolute;
+      left: 50%;
+      top: 50%;
+      width: 4px;
+      height: 7px;
+      border: 2px solid #fff;
+      border-top: none;
+      border-left: none;
+      transform: translate(-50%, -60%) rotate(45deg);
+    }
+    input[type=checkbox]:indeterminate::after {
+      content: '';
+      position: absolute;
+      left: 2px;
+      top: 5px;
+      width: 8px;
+      height: 2px;
+      background: #58a6ff;
+    }
+
+    @keyframes shimmer {
+      0%   { background-position: -600px 0; }
+      100% { background-position:  600px 0; }
+    }
+    .skeleton td { border-bottom: 1px solid #21262d; }
+    .skeleton-bar {
+      display: inline-block;
+      height: 0.7em;
+      border-radius: 3px;
+      background: linear-gradient(90deg, #21262d 25%, #30363d 50%, #21262d 75%);
+      background-size: 600px 100%;
+      animation: shimmer 1.4s infinite linear;
+    }
+    .confirm-popover {
+      position: absolute;
+      display: flex;
+      align-items: center;
+      gap: 0.4rem;
+      background: #1c2128;
+      border: 1px solid #30363d;
+      border-radius: 6px;
+      padding: 0.3rem 0.5rem;
+      font-size: 0.75rem;
+      white-space: nowrap;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.5);
+      z-index: 100;
+      transform: translateX(-50%);
+      margin-top: 4px;
+    }
+    .confirm-popover::before {
+      content: '';
+      position: absolute;
+      top: -5px;
+      left: 50%;
+      transform: translateX(-50%);
+      border: 5px solid transparent;
+      border-top: none;
+      border-bottom-color: #30363d;
+    }
+    .confirm-popover span { color: #8b949e; }
+    .confirm-yes { background: none; border: none; font-family: inherit; font-size: 0.75rem;
+                   font-weight: 700; cursor: pointer; padding: 0.1rem 0.3rem; border-radius: 3px; }
+    .confirm-no  { background: none; border: none; font-family: inherit; font-size: 0.75rem;
+                   color: #8b949e; cursor: pointer; padding: 0.1rem 0.3rem; border-radius: 3px; }
+    .confirm-no:hover  { color: #c9d1d9; }
+    .confirm-yes.stop    { color: #f85149; }
+    .confirm-yes.stop:hover    { background: #3d1a1a; }
+    .confirm-yes.restart { color: #58a6ff; }
+    .confirm-yes.restart:hover { background: #1c2a3a; }
+    .info-popup {
+      position: absolute;
+      background: #1c2128;
+      border: 1px solid #30363d;
+      border-radius: 6px;
+      padding: 0.6rem 0.75rem;
+      font-size: 0.78rem;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.5);
+      z-index: 100;
+      transform: translateX(-50%);
+      margin-top: 4px;
+      min-width: 160px;
+    }
+    .info-popup::before {
+      content: '';
+      position: absolute;
+      top: -5px;
+      left: 50%;
+      transform: translateX(-50%);
+      border: 5px solid transparent;
+      border-top: none;
+      border-bottom-color: #30363d;
+    }
+    .info-popup-title { color: #8b949e; margin-bottom: 0.4rem; font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.05em; }
+    .info-popup-none { color: #8b949e; font-style: italic; }
+    .info-popup-item { display: flex; align-items: center; gap: 0.4rem; margin: 0.15rem 0; }
+    .info-popup-item .tag { font-size: 0.68rem; font-weight: 700; padding: 0.05rem 0.3rem; border-radius: 3px; }
+    .btn-expand { background: none; border: none; color: #484f58; cursor: pointer; font-family: inherit;
+                  font-size: 0.7rem; padding: 0.3rem 0.5rem; border-radius: 3px; line-height: 1;
+                  transition: color 0.1s; margin: -0.3rem -0.1rem; }
+    .btn-expand:hover { color: #8b949e; }
+    .btn-expand.open { color: #58a6ff; }
+    tbody tr.detail-row { cursor: auto; }
+    tr.detail-row td { padding: 0; border-bottom: 1px solid #21262d; }
+    tr.detail-row:hover td { background: none; }
+    .detail-panel {
+      padding: 0.55rem 1.5rem 0.65rem 2.5rem;
+      background: #0d1117;
+      font-family: ui-monospace, 'Cascadia Code', 'Source Code Pro', monospace;
+      font-size: 0.78rem;
+      line-height: 1.6;
+    }
+    .detail-section-header { color: #58a6ff; margin-bottom: 0.1rem; }
+    .detail-line { white-space: pre; }
+    .detail-key { color: #8b949e; }
+    .detail-eq  { color: #484f58; }
+    .detail-val { color: #c9d1d9; }
+    .detail-val.path { color: #e3b341; }
+    .detail-val.bool-yes { color: #3fb950; }
+    .detail-val.bool-no  { color: #8b949e; }
+    .tag-added   { background: #1a3a20; color: #3fb950; }
+    .tag-changed { background: #2d2a1a; color: #e3b341; }
+    .tag-removed { background: #3d1a1a; color: #f85149; }
+    .btn-log { background: #1e2a1e; color: #3fb950; }
+    .btn-log:hover:not(:disabled) { background: #2d3d2d; color: #7ee787; }
+    .log-modal-overlay {
+      position: fixed; inset: 0; background: rgba(0,0,0,0.65); z-index: 200;
+      display: flex; align-items: center; justify-content: center;
+    }
+    .log-modal {
+      background: #0d1117; border: 1px solid #30363d; border-radius: 8px;
+      width: min(900px, 92vw); max-height: 80vh;
+      display: flex; flex-direction: column;
+      box-shadow: 0 8px 32px rgba(0,0,0,0.7);
+    }
+    .log-modal-header {
+      display: flex; align-items: center; gap: 0.75rem;
+      padding: 0.6rem 0.75rem; border-bottom: 1px solid #21262d; flex-shrink: 0;
+    }
+    .log-modal-title { font-size: 0.82rem; font-weight: 600; color: #c9d1d9; flex: 1; }
+    .log-modal-tabs { display: flex; gap: 0.25rem; }
+    .log-tab {
+      background: none; border: 1px solid transparent; border-radius: 4px;
+      font-family: inherit; font-size: 0.75rem; color: #8b949e;
+      padding: 0.2rem 0.6rem; cursor: pointer;
+    }
+    .log-tab:hover { color: #c9d1d9; }
+    .log-tab.active { color: #c9d1d9; border-color: #30363d; background: #161b22; }
+    .log-tab.hidden-tab { display: none; }
+    .log-modal-actions { display: flex; gap: 0.4rem; }
+    .log-modal-btn {
+      background: none; border: 1px solid #30363d; border-radius: 4px;
+      font-family: inherit; font-size: 0.75rem; color: #8b949e;
+      padding: 0.2rem 0.55rem; cursor: pointer;
+    }
+    .log-modal-btn:hover { color: #c9d1d9; border-color: #8b949e; }
+    .log-modal-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+    .log-modal-close {
+      background: none; border: none; color: #8b949e; font-size: 1rem;
+      cursor: pointer; padding: 0.1rem 0.3rem; line-height: 1; border-radius: 3px;
+    }
+    .log-modal-close:hover { color: #c9d1d9; }
+    .log-modal-body { overflow-y: auto; flex: 1; }
+    .log-modal-body pre {
+      margin: 0; padding: 0.75rem 1rem;
+      font-family: ui-monospace, 'Cascadia Code', 'Source Code Pro', monospace;
+      font-size: 0.75rem; line-height: 1.5; color: #c9d1d9;
+      white-space: pre-wrap; word-break: break-all;
+    }
+    .log-empty { color: #484f58; font-style: italic; }
+    .log-overflow-notice {
+      padding: 0.3rem 1rem; font-size: 0.72rem; color: #8b949e;
+      background: #161b22; border-bottom: 1px solid #21262d; flex-shrink: 0;
+    }
+    #toast-container { position: fixed; bottom: 1.25rem; right: 1.25rem; z-index: 1000; display: flex; flex-direction: column; gap: 0.5rem; }
+    .toast {
+      display: flex; align-items: center; gap: 0.6rem;
+      background: #1c2128; border: 1px solid #30363d; border-radius: 6px;
+      padding: 0.55rem 0.75rem; font-size: 0.8rem; box-shadow: 0 4px 16px rgba(0,0,0,0.6);
+      animation: toast-in 0.15s ease; max-width: 360px;
+    }
+    .toast.error { border-color: #f85149; }
+    .toast-icon { font-style: normal; flex-shrink: 0; }
+    .toast-msg { color: #c9d1d9; flex: 1; }
+    .toast.error .toast-msg { color: #f85149; }
+    @keyframes toast-in { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+  </style>
+</head>
+<body>
+  <header>
+    <h1><a href="https://github.com/torpedro/supervisor_control_panel" target="_blank" rel="noopener" style="text-decoration:none;line-height:0;position:relative;top:-2px;" title="GitHub"><svg height="20" width="20" viewBox="0 0 16 16" fill="currentColor"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"/></svg></a><span style="position:relative;top:-1px">Supervisor Control Panel</span></h1>
+    <div class="summary">
+      <div class="summary-item running"><span id="sum-running">—</span> running</div>
+      <div class="summary-item"><span id="sum-stopped">—</span> stopped</div>
+      <div class="summary-item"><span id="sum-cpu">—</span> CPU</div>
+      <div class="summary-item"><span id="sum-rss">—</span> RSS</div>
+    </div>
+    <div class="bulk-actions" id="bulk-actions">
+      <div class="bulk-count"><span id="bulk-count-num">0</span> selected</div>
+      <button class="btn btn-start"   id="bulk-start"   onclick="bulkConfirm('start')"            disabled>Start</button>
+      <button class="btn btn-stop"    id="bulk-stop"    onclick="bulkConfirm('stop','stop')"       disabled>Stop</button>
+      <button class="btn btn-restart" id="bulk-restart" onclick="bulkConfirm('restart','restart')" disabled>Restart</button>
+    </div>
+    <span class="last-updated" id="last-updated"></span>
+    <button class="btn btn-supervisord" onclick="supervisordAction(this, REREAD_URL, 'Reread result')">Reread</button>
+    <button class="btn btn-supervisord" onclick="supervisordAction(this, UPDATE_URL, 'Update result')">Update</button>
+    <button class="btn btn-refresh" id="btn-refresh" onclick="refresh()">↻ Refresh <span id="refresh-countdown" style="opacity:0.5;display:inline-block;width:1ch;text-align:right">-</span><span style="opacity:0.5">s</span></button>
+  </header>
+
+  <div id="error" class="error" style="display:none"></div>
+  <div id="toast-container"></div>
+  <div id="log-modal-overlay" class="log-modal-overlay" style="display:none" onclick="closeLogModal(event)">
+    <div class="log-modal" onclick="event.stopPropagation()">
+      <div class="log-modal-header">
+        <span class="log-modal-title" id="log-modal-title"></span>
+        <div class="log-modal-tabs">
+          <button class="log-tab active" id="log-tab-stdout" onclick="switchLogTab('stdout')">stdout</button>
+          <button class="log-tab"        id="log-tab-stderr" onclick="switchLogTab('stderr')">stderr</button>
+        </div>
+        <div class="log-modal-actions">
+          <button class="log-modal-btn" id="log-refresh-btn" onclick="reloadLog()">↻ Refresh</button>
+        </div>
+        <button class="log-modal-close" onclick="closeLogModal()">✕</button>
+      </div>
+      <div id="log-overflow-notice" class="log-overflow-notice" style="display:none"></div>
+      <div class="log-modal-body" id="log-modal-body"><pre></pre></div>
+    </div>
+  </div>
+
+  <table id="table">
+    <thead>
+      <tr id="thead-row" style="cursor:default">
+        <th style="width:1rem"></th>
+        <th class="sortable" data-col="name">Name</th>
+        <th class="sortable" data-col="state">State</th>
+        <th class="sortable" data-col="pid">PID</th>
+        <th class="sortable" data-col="uptime">Uptime</th>
+        <th class="sortable" data-col="cpu">CPU%</th>
+        <th class="sortable" data-col="rss">RSS</th>
+        <th class="sortable" data-col="description">Description</th>
+        <th id="th-actions"><input type="checkbox" id="check-all" onchange="toggleAll(this.checked)"> Actions</th>
+      </tr>
+    </thead>
+    <tbody id="tbody"></tbody>
+    <tfoot></tfoot>
+  </table>
+
+  <script>
+    function showToast(msg, type = 'error', duration = 5000) {
+      const container = document.getElementById('toast-container');
+      const toast = document.createElement('div');
+      toast.className = `toast ${type}`;
+      toast.innerHTML = `<i class="toast-icon">${type === 'error' ? '✕' : '✓'}</i><span class="toast-msg">${msg}</span>`;
+      container.appendChild(toast);
+      setTimeout(() => toast.remove(), duration);
+    }
+
+    const base = window.location.pathname.replace(/\/+$/, '');
+    const JSON_URL    = base + '/json';
+    const REREAD_URL  = base + '/supervisord/reread';
+    const UPDATE_URL  = base + '/supervisord/update';
+    const CONFIG_URL  = base + '/config';
+
+    const SKELETON_COLS = [16, 90, 60, 45, 80, 45, 50, 140, 80];
+    const SKELETON_ROWS = 5;
+
+    let lastData = null;
+    let actionInProgress = false;
+    let sortCol = 'name', sortDir = 'asc';
+
+    const SORT_KEY = {
+      name:        p => p.name.toLowerCase(),
+      state:       p => p.state,
+      pid:         p => parseInt(p.pid) || 0,
+      uptime:      p => {
+        const m = p.uptime.match(/(?:(\d+)h)?\s*(?:(\d+)m)?\s*(?:(\d+)s)?/);
+        return m ? (+m[1]||0)*3600 + (+m[2]||0)*60 + (+m[3]||0) : 0;
+      },
+      cpu:         p => p.cpu_raw,
+      rss:         p => p.rss_kb,
+      swap:        p => p.swap_kb,
+      description: p => p.description.toLowerCase(),
+    };
+
+    function sortedProcesses(processes) {
+      if (!sortCol) return processes;
+      const key = SORT_KEY[sortCol];
+      return [...processes].sort((a, b) => {
+        const av = key(a), bv = key(b);
+        return sortDir === 'asc' ? (av > bv ? 1 : av < bv ? -1 : 0)
+                                 : (av < bv ? 1 : av > bv ? -1 : 0);
+      });
+    }
+
+    function applySort(col) {
+      if (sortCol === col) sortDir = sortDir === 'asc' ? 'desc' : 'asc';
+      else { sortCol = col; sortDir = 'asc'; }
+      document.querySelectorAll('th.sortable').forEach(th => {
+        th.classList.remove('sort-asc', 'sort-desc');
+        if (th.dataset.col === sortCol) th.classList.add(`sort-${sortDir}`);
+      });
+      if (lastData) render(lastData);
+    }
+
+    document.getElementById('thead-row').addEventListener('click', e => {
+      const th = e.target.closest('th.sortable');
+      if (th) applySort(th.dataset.col);
+    });
+
+    function showSkeleton() {
+      document.getElementById('tbody').innerHTML = Array.from({ length: SKELETON_ROWS }, () =>
+        `<tr class="skeleton">${SKELETON_COLS.map(w =>
+          `<td><span class="skeleton-bar" style="width:${w}px"></span></td>`
+        ).join('')}</tr>`
+      ).join('');
+    }
+
+    async function fetchStatus() {
+      if (actionInProgress) return;
+      const btn = document.getElementById('btn-refresh');
+      btn.disabled = true;
+      nextRefresh = null;
+      try {
+        const res = await fetch(JSON_URL);
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || res.statusText);
+        document.getElementById('error').style.display = 'none';
+        lastData = data;
+        render(data);
+        document.getElementById('last-updated').textContent =
+          'Updated ' + new Date().toLocaleTimeString();
+      } catch (err) {
+        const el = document.getElementById('error');
+        el.textContent = err.message;
+        el.style.display = '';
+      } finally {
+        btn.disabled = false;
+        nextRefresh = REFRESH_INTERVAL;
+        renderCountdown();
+      }
+    }
+
+    function render(data) {
+      const running = data.processes.filter(p => p.state === 'RUNNING').length;
+      const exited  = data.processes.filter(p => p.state === 'EXITED').length;
+      const stopped = data.processes.length - running - exited;
+      document.getElementById('sum-running').textContent = running;
+      document.getElementById('sum-stopped').textContent = stopped;
+      document.getElementById('sum-cpu').textContent = data.total_cpu;
+      document.getElementById('sum-rss').textContent = data.total_rss;
+
+      const checked = new Set([...document.querySelectorAll('.row-check:checked')]
+        .map(cb => cb.closest('tr').dataset.name));
+      const expanded = new Set([...document.querySelectorAll('.btn-expand.open')]
+        .map(btn => btn.closest('tr').dataset.name));
+
+      document.getElementById('tbody').innerHTML = sortedProcesses(data.processes).map(p => {
+        const sc = p.state === 'RUNNING' ? 'running' : p.state === 'EXITED' ? 'exited' : p.state === 'FATAL' ? 'fatal' : 'stopped';
+        const startUrl   = `${base}/process/${encodeURIComponent(p.name)}/start`;
+        const stopUrl    = `${base}/process/${encodeURIComponent(p.name)}/stop`;
+        const restartUrl = `${base}/process/${encodeURIComponent(p.name)}/restart`;
+        const logUrl     = `${base}/process/${encodeURIComponent(p.name)}/log`;
+        const btns = p.state === 'RUNNING'
+          ? `<button class="btn btn-stop"    onclick="confirm(this,'${stopUrl}','stop')">Stop</button>
+             <button class="btn btn-restart" onclick="confirm(this,'${restartUrl}','restart')">Restart</button>`
+          : `<button class="btn btn-start"   onclick="action(this,'${startUrl}')">Start</button>`;
+        const isChecked = checked.has(p.name) ? 'checked' : '';
+        const isOpen = expanded.has(p.name);
+        const actions = `<input type="checkbox" class="row-check" ${isChecked} onchange="updateBulkBar()"> ${btns} <button class="btn btn-log" onclick="openLogModal(event,'${p.name}','${logUrl}')">Logs</button>`;
+        const rows = [`<tr class="${sc}" data-name="${p.name}" data-state="${p.state}"
+                    data-start="${startUrl}" data-stop="${stopUrl}" data-restart="${restartUrl}">
+          <td style="padding-right:0;width:1rem"><button class="btn-expand${isOpen ? ' open' : ''}" onclick="toggleDetail(this)" title="Show config">▶</button></td>
+          <td>${p.name}</td>
+          <td><span class="badge ${sc}">${p.state}</span></td>
+          <td>${p.pid}</td>
+          <td>${p.uptime}</td>
+          <td>${p.cpu}</td>
+          <td>${p.rss}</td>
+          <td class="desc">${p.description}</td>
+          <td class="actions">${actions}</td>
+        </tr>`];
+        if (isOpen) rows.push(detailRow(p.name));
+        return rows.join('');
+      }).join('');
+
+      updateBulkBar();
+    }
+
+    // ── Config detail ────────────────────────────────────────────────────────
+
+    let configCache = null;
+
+    async function getConfig() {
+      if (!configCache) {
+        const res = await fetch(CONFIG_URL);
+        if (!res.ok) throw new Error(await res.text());
+        configCache = await res.json();
+      }
+      return configCache;
+    }
+
+    const SIGNALS = {1:'SIGHUP',2:'SIGINT',3:'SIGQUIT',9:'SIGKILL',15:'SIGTERM',
+                     16:'SIGUSR1',17:'SIGUSR2',11:'SIGSEGV'};
+
+    function detailRow(name) {
+      const cfg = configCache?.[name];
+      if (!cfg) return `<tr class="detail-row"><td colspan="9"><div class="detail-panel"><span style="color:#484f58">Loading…</span></div></td></tr>`;
+      const isSet = v => v !== undefined && v !== null && v !== '' && v !== 'none' && v !== 'AUTO';
+
+      function line(key, rawVal, valClass) {
+        const val = rawVal === null || rawVal === undefined ? '' : String(rawVal);
+        return `<div class="detail-line"><span class="detail-key">${key}</span><span class="detail-eq"> = </span><span class="detail-val ${valClass||''}">${val}</span></div>`;
+      }
+
+      const lines = [];
+      lines.push(line('command',      cfg.command,                              'path'));
+      if (isSet(cfg.directory))  lines.push(line('directory',    cfg.directory,                        'path'));
+      if (isSet(cfg.user))       lines.push(line('user',         cfg.user,                             ''));
+      lines.push(line('autostart',    cfg.autostart ? 'true' : 'false',         cfg.autostart ? 'bool-yes' : 'bool-no'));
+      lines.push(line('startsecs',    cfg.startsecs,                            ''));
+      lines.push(line('startretries', cfg.startretries,                         ''));
+      if (cfg.stopsignal)        lines.push(line('stopsignal',   SIGNALS[cfg.stopsignal] || cfg.stopsignal, ''));
+      lines.push(line('stopwaitsecs', cfg.stopwaitsecs,                         ''));
+      if (cfg.redirect_stderr) {
+        if (isSet(cfg.stdout_logfile)) lines.push(line('stdout_logfile', cfg.stdout_logfile, 'path'));
+        lines.push(line('redirect_stderr', 'true', 'bool-yes'));
+      } else {
+        if (isSet(cfg.stdout_logfile)) lines.push(line('stdout_logfile', cfg.stdout_logfile, 'path'));
+        if (isSet(cfg.stderr_logfile)) lines.push(line('stderr_logfile', cfg.stderr_logfile, 'path'));
+      }
+
+      const parts = name.split(':');
+      const group = parts.length === 2 ? parts[0] : null;
+      const procName = parts.length === 2 ? parts[1] : parts[0];
+      const hasGroup = group && group !== procName;
+
+      let groupSection = '';
+      if (hasGroup && configCache) {
+        const programs = Object.keys(configCache)
+          .filter(k => k.startsWith(group + ':'))
+          .map(k => k.split(':')[1])
+          .join(',');
+        groupSection = `<div class="detail-section-header">[group:${group}]</div>
+        <div class="detail-line"><span class="detail-key">programs</span><span class="detail-eq"> = </span><span class="detail-val">${programs}</span></div>
+        <div style="height:0.6rem"></div>
+        `;
+      }
+
+      return `<tr class="detail-row"><td colspan="9"><div class="detail-panel">
+        ${groupSection}<div class="detail-section-header">[program:${procName}]</div>
+        ${lines.join('\n        ')}
+      </div></td></tr>`;
+    }
+
+    async function toggleDetail(btn) {
+      const tr = btn.closest('tr');
+      const name = tr.dataset.name;
+      const isOpen = btn.classList.contains('open');
+      if (isOpen) {
+        btn.classList.remove('open');
+        const next = tr.nextElementSibling;
+        if (next?.classList.contains('detail-row')) next.remove();
+      } else {
+        btn.classList.add('open');
+        const placeholder = document.createElement('tr');
+        placeholder.className = 'detail-row';
+        placeholder.innerHTML = `<td colspan="9"><div class="detail-panel"><span class="detail-key">Loading…</span></div></td>`;
+        tr.insertAdjacentElement('afterend', placeholder);
+        try {
+          await getConfig();
+          placeholder.outerHTML = detailRow(name);
+        } catch (err) {
+          placeholder.innerHTML = `<td colspan="9"><div class="detail-panel"><span class="detail-key" style="color:#f85149">${err.message}</span></div></td>`;
+        }
+      }
+    }
+
+    // ── Bulk mode ────────────────────────────────────────────────────────────
+
+    let lastCheckedIndex = null;
+
+    function rowCheckboxes() {
+      return [...document.querySelectorAll('.row-check')];
+    }
+
+    function handleRowClick(e, cb) {
+      const boxes = rowCheckboxes();
+      const idx = boxes.indexOf(cb);
+      if (e.shiftKey && lastCheckedIndex !== null && idx !== lastCheckedIndex) {
+        e.preventDefault();
+        const [from, to] = [Math.min(lastCheckedIndex, idx), Math.max(lastCheckedIndex, idx)];
+        boxes.slice(from, to + 1).forEach(b => { b.checked = cb.checked; });
+      }
+      lastCheckedIndex = idx;
+      updateBulkBar();
+    }
+
+    document.getElementById('tbody').addEventListener('mousedown', e => {
+      if (e.shiftKey) e.preventDefault();
+    });
+
+    document.getElementById('tbody').addEventListener('click', e => {
+      const tr = e.target.closest('tr');
+      if (!tr) return;
+      const cb = tr.querySelector('.row-check');
+      if (!cb) return;
+      if (e.target.closest('button')) return; // don't select row when clicking action buttons
+      const caretTd = tr.querySelector('td:first-child');
+      if (caretTd && caretTd.contains(e.target)) {
+        toggleDetail(caretTd.querySelector('.btn-expand'));
+        return;
+      }
+      if (e.target !== cb) cb.checked = !cb.checked;
+      handleRowClick(e, cb);
+    });
+
+    function toggleAll(checked) {
+      document.querySelectorAll('.row-check').forEach(cb => cb.checked = checked);
+      lastCheckedIndex = null;
+      updateBulkBar();
+    }
+
+    function updateBulkBar() {
+      const all     = document.querySelectorAll('.row-check');
+      const checked = [...document.querySelectorAll('.row-check:checked')];
+      const count   = checked.length;
+      document.getElementById('bulk-count-num').textContent = count;
+      document.getElementById('bulk-actions').classList.toggle('visible', count > 0);
+      const anyRunning = checked.some(cb => cb.closest('tr').dataset.state === 'RUNNING');
+      const anyStopped = checked.some(cb => cb.closest('tr').dataset.state !== 'RUNNING');
+      document.getElementById('bulk-start').disabled   = !anyStopped;
+      document.getElementById('bulk-stop').disabled    = !anyRunning;
+      document.getElementById('bulk-restart').disabled = !anyRunning;
+      const ca = document.getElementById('check-all');
+      if (ca) {
+        ca.indeterminate = count > 0 && count < all.length;
+        ca.checked = count > 0 && count === all.length;
+      }
+    }
+
+    function bulkConfirm(actionType, confirmType) {
+      const btn = document.getElementById(`bulk-${actionType}`);
+      confirm(btn, null, confirmType || null, true);
+    }
+
+    async function bulkAction(actionType) {
+      actionInProgress = true;
+      const rows = [...document.querySelectorAll('.row-check:checked')].map(cb => cb.closest('tr'));
+      const relevant = rows.filter(tr => {
+        if (actionType === 'start')   return tr.dataset.state !== 'RUNNING';
+        if (actionType === 'stop')    return tr.dataset.state === 'RUNNING';
+        if (actionType === 'restart') return tr.dataset.state === 'RUNNING';
+      });
+      relevant.forEach(tr => tr.classList.add('pending'));
+      await Promise.all(relevant.map(tr => fetch(tr.dataset[actionType], { method: 'POST' })));
+      actionInProgress = false;
+      await fetchStatus();
+    }
+
+    // ── Confirm popover ──────────────────────────────────────────────────────
+
+    let activePopover = null;
+    let activePopoverBtn = null;
+
+    function dismissPopover() {
+      if (activePopover) { activePopover.remove(); activePopover = null; activePopoverBtn = null; }
+    }
+
+    function confirm(btn, url, type, isBulk = false) {
+      if (activePopoverBtn === btn) { dismissPopover(); return; }
+      dismissPopover();
+
+      const popover = document.createElement('div');
+      popover.className = 'confirm-popover';
+      popover.innerHTML = `
+        <span>Sure?</span>
+        <button class="confirm-yes ${type || ''}">Yes</button>
+        <button class="confirm-no">No</button>`;
+
+      const rect = btn.getBoundingClientRect();
+      popover.style.left = (rect.left + rect.width / 2 + window.scrollX) + 'px';
+      popover.style.top  = (rect.bottom + window.scrollY) + 'px';
+      document.body.appendChild(popover);
+      activePopover = popover;
+      activePopoverBtn = btn;
+
+      popover.querySelector('.confirm-no').onclick  = dismissPopover;
+      popover.querySelector('.confirm-yes').onclick = () => {
+        dismissPopover();
+        isBulk ? bulkAction(type === 'stop' ? 'stop' : type === 'restart' ? 'restart' : 'start')
+                : action(btn, url);
+      };
+    }
+
+    document.addEventListener('click', e => {
+      if (activePopover && !activePopover.contains(e.target) && e.target !== activePopoverBtn && !activePopoverBtn?.contains(e.target)) dismissPopover();
+    }, true);
+
+    async function action(btn, url) {
+      actionInProgress = true;
+      btn.disabled = true;
+      const row = btn.closest('tr');
+      if (row) row.classList.add('pending');
+      try {
+        const res = await fetch(url, { method: 'POST' });
+        if (!res.ok) throw new Error(await res.text());
+        actionInProgress = false;
+        await fetchStatus();
+      } catch (err) {
+        showToast(err.message);
+        btn.disabled = false;
+        if (row) row.classList.remove('pending');
+        actionInProgress = false;
+      }
+    }
+
+    const REFRESH_INTERVAL = 9;
+    let nextRefresh = null;
+
+    function renderCountdown() {
+      document.getElementById('refresh-countdown').textContent =
+        nextRefresh === null ? '-' : nextRefresh;
+    }
+
+    function updateCountdown() {
+      if (nextRefresh === null) return;
+      if (nextRefresh === 0) { fetchStatus(); return; }
+      nextRefresh--;
+      renderCountdown();
+    }
+
+    async function refresh() {
+      nextRefresh = REFRESH_INTERVAL;
+      await fetchStatus();
+    }
+
+    let activeInfoPopover = null;
+
+    function dismissInfoPopover() {
+      if (activeInfoPopover) { activeInfoPopover.remove(); activeInfoPopover = null; }
+    }
+
+    function showResultPopup(btn, title, data) {
+      dismissInfoPopover();
+      const all = [
+        ...data.added.map(n   => `<div class="info-popup-item"><span class="tag tag-added">added</span>${n}</div>`),
+        ...data.changed.map(n => `<div class="info-popup-item"><span class="tag tag-changed">changed</span>${n}</div>`),
+        ...data.removed.map(n => `<div class="info-popup-item"><span class="tag tag-removed">removed</span>${n}</div>`),
+      ];
+      const body = all.length ? all.join('') : `<div class="info-popup-none">No changes</div>`;
+
+      const popup = document.createElement('div');
+      popup.className = 'info-popup';
+      popup.innerHTML = `<div class="info-popup-title">${title}</div>${body}`;
+
+      const rect = btn.getBoundingClientRect();
+      popup.style.left = (rect.left + rect.width / 2 + window.scrollX) + 'px';
+      popup.style.top  = (rect.bottom + window.scrollY) + 'px';
+      document.body.appendChild(popup);
+      activeInfoPopover = popup;
+    }
+
+    document.addEventListener('click', e => {
+      if (activeInfoPopover && !activeInfoPopover.contains(e.target)) dismissInfoPopover();
+    }, true);
+
+    async function supervisordAction(btn, url, title) {
+      btn.disabled = true;
+      dismissInfoPopover();
+      try {
+        const res = await fetch(url, { method: 'POST' });
+        if (!res.ok) throw new Error(await res.text());
+        const data = await res.json();
+        if (data && 'added' in data) showResultPopup(btn, title, data);
+        configCache = null;
+        await fetchStatus();
+      } catch (err) {
+        showToast(err.message);
+      } finally {
+        btn.disabled = false;
+      }
+    }
+
+    // ── Log modal ────────────────────────────────────────────────────────────
+
+    let logState = { name: null, logUrl: null, stream: 'stdout' };
+
+    function isSingleLog(name) {
+      const cfg = configCache?.[name];
+      if (!cfg) return false;
+      if (cfg.redirect_stderr) return true;
+      const isSet = v => v && v !== 'none' && v !== 'AUTO';
+      return isSet(cfg.stdout_logfile) && cfg.stdout_logfile === cfg.stderr_logfile;
+    }
+
+    async function openLogModal(e, name, logUrl) {
+      e.stopPropagation();
+      logState = { name, logUrl, stream: 'stdout' };
+      document.getElementById('log-modal-title').textContent = name;
+      document.getElementById('log-modal-overlay').style.display = 'flex';
+
+      if (!configCache) await getConfig().catch(() => {});
+      const single = isSingleLog(name);
+      document.getElementById('log-tab-stdout').textContent = single ? 'log' : 'stdout';
+      document.getElementById('log-tab-stdout').classList.add('active');
+      document.getElementById('log-tab-stderr').classList.toggle('hidden-tab', single);
+      document.getElementById('log-tab-stderr').classList.remove('active');
+
+      reloadLog();
+    }
+
+    function closeLogModal(e) {
+      if (e && e.target !== document.getElementById('log-modal-overlay')) return;
+      document.getElementById('log-modal-overlay').style.display = 'none';
+    }
+
+    function switchLogTab(stream) {
+      if (isSingleLog(logState.name)) return;
+      logState.stream = stream;
+      document.getElementById('log-tab-stdout').classList.toggle('active', stream === 'stdout');
+      document.getElementById('log-tab-stderr').classList.toggle('active', stream === 'stderr');
+      reloadLog();
+    }
+
+    async function reloadLog() {
+      const { logUrl, stream } = logState;
+      const btn = document.getElementById('log-refresh-btn');
+      const pre = document.getElementById('log-modal-body').querySelector('pre');
+      btn.disabled = true;
+      pre.innerHTML = '<span class="log-empty">Loading…</span>';
+      document.getElementById('log-overflow-notice').style.display = 'none';
+      try {
+        const res = await fetch(`${logUrl}/${stream}?length=65536`);
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || res.statusText);
+        const notice = document.getElementById('log-overflow-notice');
+        if (data.overflow) {
+          notice.textContent = `Showing last 64 KB — log has more content.`;
+          notice.style.display = '';
+        }
+        pre.textContent = data.log || '';
+        if (!data.log) pre.innerHTML = '<span class="log-empty">No log output.</span>';
+        document.getElementById('log-modal-body').scrollTop = document.getElementById('log-modal-body').scrollHeight;
+      } catch (err) {
+        pre.innerHTML = `<span style="color:#f85149">${err.message}</span>`;
+      } finally {
+        btn.disabled = false;
+      }
+    }
+
+    document.addEventListener('keydown', e => {
+      if (e.key === 'Escape') document.getElementById('log-modal-overlay').style.display = 'none';
+    });
+
+    document.querySelector(`th[data-col="${sortCol}"]`)?.classList.add(`sort-${sortDir}`);
+    showSkeleton();
+    fetchStatus();
+    setInterval(updateCountdown, 1000);
+  </script>
+</body>
+</html>
