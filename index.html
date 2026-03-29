@@ -497,8 +497,8 @@
         const restartUrl = `${base}/process/${encodeURIComponent(fn)}/restart`;
         const logUrl     = `${base}/process/${encodeURIComponent(fn)}/log`;
         const btns = p.state === 'RUNNING'
-          ? `<button class="btn btn-stop"    onclick="confirm(this,'${stopUrl}','stop')">Stop</button>
-             <button class="btn btn-restart" onclick="confirm(this,'${restartUrl}','restart')">Restart</button>`
+          ? `<button class="btn btn-stop"    onclick="confirm(this,'${stopUrl}','stop','${fn}')">Stop</button>
+             <button class="btn btn-restart" onclick="confirm(this,'${restartUrl}','restart','${fn}')">Restart</button>`
           : `<button class="btn btn-start"   onclick="action(this,'${startUrl}')">Start</button>`;
         const isChecked = checked.has(fn) ? 'checked' : '';
         const isOpen = expanded.has(fn);
@@ -676,7 +676,7 @@
 
     function bulkConfirm(actionType, confirmType) {
       const btn = document.getElementById(`bulk-${actionType}`);
-      confirm(btn, null, confirmType || null, true);
+      confirm(btn, null, confirmType || null, /* isBulk */ true);
     }
 
     async function bulkAction(actionType) {
@@ -702,14 +702,16 @@
       if (activePopover) { activePopover.remove(); activePopover = null; activePopoverBtn = null; }
     }
 
-    function confirm(btn, url, type, isBulk = false) {
+    function confirm(btn, url, type, nameOrBulk = false) {
+      const isBulk = nameOrBulk === true;
+      const name   = isBulk ? null : nameOrBulk;
       if (activePopoverBtn === btn) { dismissPopover(); return; }
       dismissPopover();
 
       const popover = document.createElement('div');
       popover.className = 'confirm-popover';
       popover.innerHTML = `
-        <span>Sure?</span>
+        <span>${name ? `${type} <strong>${name}</strong>?` : 'Sure?'}</span>
         <button class="confirm-yes ${type || ''}">Yes</button>
         <button class="confirm-no">No</button>`;
 
