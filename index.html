@@ -22,13 +22,23 @@
     .summary-item { color: #8b949e; }
     .summary-item span { font-weight: 600; color: #c9d1d9; }
     .summary-item.running span { color: #3fb950; }
-    .last-updated { font-size: 0.78rem; color: #484f58; white-space: nowrap; }
     .error { background: #3d1a1a; border: 1px solid #f85149; color: #f85149;
              padding: 0.75rem 1rem; border-radius: 6px; margin-bottom: 1rem; }
     table { width: 100%; border-collapse: collapse; font-size: 0.82rem; }
     thead tr { background: #161b22; }
     th { padding: 0.5rem 0.75rem; text-align: left; color: #8b949e;
          border-bottom: 1px solid #21262d; white-space: nowrap; }
+    @media (max-width: 600px) {
+      .col-expand, .col-pid, .col-uptime, .col-cpu, .col-rss, .col-desc { display: none; }
+      header { flex-wrap: wrap; gap: 0.4rem; }
+      .summary { gap: 0.6rem; font-size: 0.75rem; }
+      .sum-hide { display: none; }
+      body { padding: 0.5rem 0; }
+      header { padding: 0 0.75rem; }
+      #tbody { user-select: none; -webkit-user-select: none; }
+      .bulk-actions { display: flex !important; }
+      .actions .btn-start, .actions .btn-stop, .actions .btn-restart { display: none; }
+    }
     th.sortable { cursor: pointer; user-select: none; }
     th.sortable:hover { color: #c9d1d9; }
     th.sort-asc, th.sort-desc { color: #58a6ff; }
@@ -37,8 +47,10 @@
     th.sort-desc::after { content: ' ↓'; opacity: 1; }
     td { padding: 0.28rem 0.75rem; border-bottom: 1px solid #21262d; vertical-align: middle; }
     tr:hover td { background: #161b22; }
-    tr:has(.row-check:checked) td { background: #161f2e; }
+    tr:has(.row-check:checked) td { background: #161f2e; border-bottom-color: #1d2d45; }
     tr:has(.row-check:checked):hover td { background: #1a2535; }
+    tr:has(.row-check:checked) td:first-child { box-shadow: inset 3px 0 0 #58a6ff; }
+    .row-check { display: none; }
     tr.running td:first-child { border-left: 3px solid #3fb950; }
     tr.stopped td:first-child { border-left: 3px solid #30363d; }
     tr.exited  td:first-child { border-left: 3px solid #bf7fff; }
@@ -60,10 +72,12 @@
     tr.pending td:first-child { border-left-color: #8b949e; }
     tbody tr { cursor: pointer; }
     .badge { padding: 0.15rem 0.5rem; border-radius: 20px; font-size: 0.75rem; font-weight: 600; }
-    .badge.running { background: #1a3a20; color: #3fb950; }
-    .badge.stopped { background: #21262d; color: #8b949e; }
-    .badge.exited  { background: #2d1a3a; color: #bf7fff; }
-    .badge.fatal   { background: #3d1a1a; color: #f85149; }
+    .badge.running  { background: #1a3a20; color: #3fb950; }
+    .badge.stopped  { background: #21262d; color: #8b949e; }
+    .badge.exited   { background: #2d1a3a; color: #bf7fff; }
+    .badge.fatal    { background: #3d1a1a; color: #f85149; }
+    .badge.waiting  { background: #21262d; color: #8b949e; animation: waiting-pulse 1s ease-in-out infinite; }
+    @keyframes waiting-pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.4; } }
     .desc { color: #8b949e; font-size: 0.78rem; }
     .actions { white-space: nowrap; }
     .btn { padding: 0.2rem 0.55rem; border: none; border-radius: 4px; font-size: 0.75rem;
@@ -179,43 +193,6 @@
     .confirm-yes.stop:hover    { background: #3d1a1a; }
     .confirm-yes.restart { color: #58a6ff; }
     .confirm-yes.restart:hover { background: #1c2a3a; }
-    .ctx-menu {
-      position: fixed;
-      background: #1c2128;
-      border: 1px solid #30363d;
-      border-radius: 8px;
-      padding: 0.35rem 0;
-      box-shadow: 0 8px 24px rgba(0,0,0,0.6);
-      z-index: 200;
-      min-width: 160px;
-    }
-    .ctx-menu-title {
-      padding: 0.35rem 0.85rem 0.35rem;
-      font-size: 0.72rem;
-      color: #8b949e;
-      border-bottom: 1px solid #30363d;
-      margin-bottom: 0.25rem;
-      white-space: nowrap;
-      overflow: hidden;
-      text-overflow: ellipsis;
-      max-width: 220px;
-    }
-    .ctx-menu button {
-      display: block;
-      width: 100%;
-      text-align: left;
-      background: none;
-      border: none;
-      padding: 0.5rem 0.85rem;
-      font-size: 0.85rem;
-      font-family: inherit;
-      cursor: pointer;
-      color: #c9d1d9;
-    }
-    .ctx-menu button:hover  { background: #2d333b; }
-    .ctx-menu button.stop   { color: #f85149; }
-    .ctx-menu button.start  { color: #3fb950; }
-    .ctx-menu button.restart { color: #58a6ff; }
     .info-popup {
       position: absolute;
       background: #1c2128;
@@ -340,8 +317,8 @@
     <div class="summary">
       <div class="summary-item running"><span id="sum-running">—</span> running</div>
       <div class="summary-item"><span id="sum-stopped">—</span> stopped</div>
-      <div class="summary-item"><span id="sum-cpu">—</span> CPU</div>
-      <div class="summary-item"><span id="sum-rss">—</span> RSS</div>
+      <div class="summary-item sum-hide"><span id="sum-cpu">—</span> CPU</div>
+      <div class="summary-item sum-hide"><span id="sum-rss">—</span> RSS</div>
     </div>
     <div class="bulk-actions" id="bulk-actions">
       <div class="bulk-count"><span id="bulk-count-num">0</span> selected</div>
@@ -349,7 +326,6 @@
       <button class="btn btn-stop"    id="bulk-stop"    onclick="bulkConfirm('stop','stop')"       disabled>Stop</button>
       <button class="btn btn-restart" id="bulk-restart" onclick="bulkConfirm('restart','restart')" disabled>Restart</button>
     </div>
-    <span class="last-updated" id="last-updated"></span>
     <button class="btn btn-supervisord" onclick="supervisordAction(this, REREAD_URL, 'Reread result')">Reread</button>
     <button class="btn btn-supervisord" onclick="supervisordAction(this, UPDATE_URL, 'Update result')">Update</button>
     <button class="btn btn-refresh" id="btn-refresh" onclick="refresh()">↻ Refresh <span id="refresh-countdown" style="opacity:0.5;display:inline-block;width:1ch;text-align:right">-</span><span style="opacity:0.5">s</span></button>
@@ -378,15 +354,15 @@
   <table id="table">
     <thead>
       <tr id="thead-row" style="cursor:default">
-        <th style="width:1rem"></th>
+        <th class="col-expand" style="width:1rem"></th>
         <th class="sortable" data-col="name">Name</th>
         <th class="sortable" data-col="state">State</th>
-        <th class="sortable" data-col="pid">PID</th>
-        <th class="sortable" data-col="uptime" style="text-align:right">Uptime</th>
-        <th class="sortable" data-col="cpu" style="text-align:right">CPU%</th>
-        <th class="sortable" data-col="rss" style="text-align:right">RSS</th>
-        <th class="sortable" data-col="description">Description</th>
-        <th id="th-actions"><input type="checkbox" id="check-all" onchange="toggleAll(this.checked)"> Actions</th>
+        <th class="sortable col-pid" data-col="pid">PID</th>
+        <th class="sortable col-uptime" data-col="uptime" style="text-align:right">Uptime</th>
+        <th class="sortable col-cpu" data-col="cpu" style="text-align:right">CPU%</th>
+        <th class="sortable col-rss" data-col="rss" style="text-align:right">RSS</th>
+        <th class="sortable col-desc" data-col="description">Description</th>
+        <th id="th-actions"><input type="checkbox" id="check-all" onchange="toggleAll(this.checked)" style="display:none"> Actions</th>
       </tr>
     </thead>
     <tbody id="tbody"></tbody>
@@ -499,8 +475,6 @@
         document.getElementById('error').style.display = 'none';
         lastData = data;
         render(data);
-        document.getElementById('last-updated').textContent =
-          'Updated ' + new Date().toLocaleTimeString();
       } catch (err) {
         const el = document.getElementById('error');
         el.textContent = err.message;
@@ -539,17 +513,17 @@
           : `<button class="btn btn-start"   onclick="action(this,'${startUrl}')">Start</button>`;
         const isChecked = checked.has(fn) ? 'checked' : '';
         const isOpen = expanded.has(fn);
-        const actions = `<input type="checkbox" class="row-check" ${isChecked} onchange="updateBulkBar()"> ${btns} <button class="btn btn-log" onclick="openLogModal(event,'${fn}','${logUrl}')">Logs</button>`;
+        const actions = `<input type="checkbox" class="row-check" ${isChecked} onchange="updateBulkBar()">${btns} <button class="btn btn-log" onclick="openLogModal(event,'${fn}','${logUrl}')">Logs</button>`;
         const rows = [`<tr class="${sc}" data-name="${fn}" data-state="${p.state}"
                     data-start="${startUrl}" data-stop="${stopUrl}" data-restart="${restartUrl}">
-          <td style="padding-right:0;width:1rem"><button class="btn-expand${isOpen ? ' open' : ''}" onclick="toggleDetail(this)" title="Show config">▶</button></td>
+          <td class="col-expand" style="padding-right:0;width:1rem"><button class="btn-expand${isOpen ? ' open' : ''}" onclick="toggleDetail(this)" title="Show config">▶</button></td>
           <td>${fn}</td>
           <td><span class="badge ${sc}">${p.state}</span></td>
-          <td>${p.pid}</td>
-          <td style="text-align:right">${formatUptime(p.uptime_seconds)}</td>
-          <td style="text-align:right">${p.cpu}</td>
-          <td style="text-align:right">${formatBytes(p.rss_bytes)}</td>
-          <td class="desc">${p.description}</td>
+          <td class="col-pid">${p.pid}</td>
+          <td class="col-uptime" style="text-align:right">${formatUptime(p.uptime_seconds)}</td>
+          <td class="col-cpu" style="text-align:right">${p.cpu}</td>
+          <td class="col-rss" style="text-align:right">${formatBytes(p.rss_bytes)}</td>
+          <td class="col-desc desc">${p.description}</td>
           <td class="actions">${actions}</td>
         </tr>`];
         if (isOpen) rows.push(detailRow(fn));
@@ -724,7 +698,11 @@
         if (actionType === 'stop')    return tr.dataset.state === 'RUNNING';
         if (actionType === 'restart') return tr.dataset.state === 'RUNNING';
       });
-      relevant.forEach(tr => tr.classList.add('pending'));
+      relevant.forEach(tr => {
+        tr.classList.add('pending');
+        const badge = tr.querySelector('.badge');
+        if (badge) { badge.className = 'badge waiting'; badge.textContent = 'Waiting'; }
+      });
       await Promise.all(relevant.map(tr => fetch(tr.dataset[actionType], { method: 'POST' })));
       actionInProgress = false;
       await fetchStatus();
@@ -771,88 +749,16 @@
       if (activePopover && !activePopover.contains(e.target) && e.target !== activePopoverBtn && !activePopoverBtn?.contains(e.target)) dismissPopover();
     }, true);
 
-    // ── Mobile long-press context menu ────────────────────────────────────────
-
-    let ctxMenu = null;
-    let longPressTimer = null;
-
-    function dismissCtxMenu() {
-      if (ctxMenu) { ctxMenu.remove(); ctxMenu = null; }
-    }
-
-    function showCtxMenu(tr, x, y) {
-      dismissCtxMenu();
-      const name    = tr.dataset.name;
-      const state   = tr.dataset.state;
-      const startUrl   = tr.dataset.start;
-      const stopUrl    = tr.dataset.stop;
-      const restartUrl = tr.dataset.restart;
-      const logUrl     = startUrl.replace('/start', '/log');
-
-      const menu = document.createElement('div');
-      menu.className = 'ctx-menu';
-      menu.innerHTML = `<div class="ctx-menu-title">${name}</div>`;
-
-      if (state === 'RUNNING') {
-        const stopBtn    = document.createElement('button');
-        stopBtn.className = 'stop';
-        stopBtn.textContent = 'Stop';
-        stopBtn.onclick = () => { confirm(stopBtn, stopUrl, 'stop', name); dismissCtxMenu(); };
-        const restartBtn = document.createElement('button');
-        restartBtn.className = 'restart';
-        restartBtn.textContent = 'Restart';
-        restartBtn.onclick = () => { confirm(restartBtn, restartUrl, 'restart', name); dismissCtxMenu(); };
-        menu.append(stopBtn, restartBtn);
-      } else {
-        const startBtn = document.createElement('button');
-        startBtn.className = 'start';
-        startBtn.textContent = 'Start';
-        startBtn.onclick = () => { dismissCtxMenu(); action(startBtn, startUrl); };
-        menu.append(startBtn);
-      }
-
-      const logsBtn = document.createElement('button');
-      logsBtn.textContent = 'Logs';
-      logsBtn.onclick = () => { dismissCtxMenu(); openLogModal({ preventDefault() {} }, name, logUrl); };
-      menu.append(logsBtn);
-
-      // Keep menu inside viewport
-      menu.style.left = '0'; menu.style.top = '0';
-      document.body.appendChild(menu);
-      const mw = menu.offsetWidth, mh = menu.offsetHeight;
-      menu.style.left = Math.min(x, window.innerWidth  - mw - 8) + 'px';
-      menu.style.top  = Math.min(y, window.innerHeight - mh - 8) + 'px';
-      ctxMenu = menu;
-    }
-
-    document.getElementById('tbody').addEventListener('touchstart', e => {
-      const tr = e.target.closest('tr[data-name]');
-      if (!tr) return;
-      const touch = e.touches[0];
-      longPressTimer = setTimeout(() => {
-        navigator.vibrate?.(40);
-        showCtxMenu(tr, touch.clientX, touch.clientY);
-      }, 500);
-    }, { passive: true });
-
-    document.getElementById('tbody').addEventListener('touchend',  () => clearTimeout(longPressTimer), { passive: true });
-    document.getElementById('tbody').addEventListener('touchmove', () => clearTimeout(longPressTimer), { passive: true });
-
-    document.getElementById('tbody').addEventListener('contextmenu', e => {
-      const tr = e.target.closest('tr[data-name]');
-      if (!tr) return;
-      e.preventDefault();
-    });
-
-    document.addEventListener('touchstart', e => {
-      if (ctxMenu && !ctxMenu.contains(e.target)) dismissCtxMenu();
-    }, { passive: true });
 
     async function action(btn, url) {
       actionInProgress = true;
       btn.disabled = true;
       const row = btn.closest('tr');
-      if (row) row.classList.add('pending');
+      if (row) {
+        row.classList.add('pending');
+        const badge = row.querySelector('.badge');
+        if (badge) { badge.className = 'badge waiting'; badge.textContent = 'Waiting'; }
+      }
       try {
         const res = await fetch(url, { method: 'POST' });
         if (!res.ok) throw new Error(await res.text());
