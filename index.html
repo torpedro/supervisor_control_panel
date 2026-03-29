@@ -179,6 +179,43 @@
     .confirm-yes.stop:hover    { background: #3d1a1a; }
     .confirm-yes.restart { color: #58a6ff; }
     .confirm-yes.restart:hover { background: #1c2a3a; }
+    .ctx-menu {
+      position: fixed;
+      background: #1c2128;
+      border: 1px solid #30363d;
+      border-radius: 8px;
+      padding: 0.35rem 0;
+      box-shadow: 0 8px 24px rgba(0,0,0,0.6);
+      z-index: 200;
+      min-width: 160px;
+    }
+    .ctx-menu-title {
+      padding: 0.35rem 0.85rem 0.35rem;
+      font-size: 0.72rem;
+      color: #8b949e;
+      border-bottom: 1px solid #30363d;
+      margin-bottom: 0.25rem;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      max-width: 220px;
+    }
+    .ctx-menu button {
+      display: block;
+      width: 100%;
+      text-align: left;
+      background: none;
+      border: none;
+      padding: 0.5rem 0.85rem;
+      font-size: 0.85rem;
+      font-family: inherit;
+      cursor: pointer;
+      color: #c9d1d9;
+    }
+    .ctx-menu button:hover  { background: #2d333b; }
+    .ctx-menu button.stop   { color: #f85149; }
+    .ctx-menu button.start  { color: #3fb950; }
+    .ctx-menu button.restart { color: #58a6ff; }
     .info-popup {
       position: absolute;
       background: #1c2128;
@@ -733,6 +770,83 @@
     document.addEventListener('click', e => {
       if (activePopover && !activePopover.contains(e.target) && e.target !== activePopoverBtn && !activePopoverBtn?.contains(e.target)) dismissPopover();
     }, true);
+
+    // ── Mobile long-press context menu ────────────────────────────────────────
+
+    let ctxMenu = null;
+    let longPressTimer = null;
+
+    function dismissCtxMenu() {
+      if (ctxMenu) { ctxMenu.remove(); ctxMenu = null; }
+    }
+
+    function showCtxMenu(tr, x, y) {
+      dismissCtxMenu();
+      const name    = tr.dataset.name;
+      const state   = tr.dataset.state;
+      const startUrl   = tr.dataset.start;
+      const stopUrl    = tr.dataset.stop;
+      const restartUrl = tr.dataset.restart;
+      const logUrl     = startUrl.replace('/start', '/log');
+
+      const menu = document.createElement('div');
+      menu.className = 'ctx-menu';
+      menu.innerHTML = `<div class="ctx-menu-title">${name}</div>`;
+
+      if (state === 'RUNNING') {
+        const stopBtn    = document.createElement('button');
+        stopBtn.className = 'stop';
+        stopBtn.textContent = 'Stop';
+        stopBtn.onclick = () => { confirm(stopBtn, stopUrl, 'stop', name); dismissCtxMenu(); };
+        const restartBtn = document.createElement('button');
+        restartBtn.className = 'restart';
+        restartBtn.textContent = 'Restart';
+        restartBtn.onclick = () => { confirm(restartBtn, restartUrl, 'restart', name); dismissCtxMenu(); };
+        menu.append(stopBtn, restartBtn);
+      } else {
+        const startBtn = document.createElement('button');
+        startBtn.className = 'start';
+        startBtn.textContent = 'Start';
+        startBtn.onclick = () => { dismissCtxMenu(); action(startBtn, startUrl); };
+        menu.append(startBtn);
+      }
+
+      const logsBtn = document.createElement('button');
+      logsBtn.textContent = 'Logs';
+      logsBtn.onclick = () => { dismissCtxMenu(); openLogModal({ preventDefault() {} }, name, logUrl); };
+      menu.append(logsBtn);
+
+      // Keep menu inside viewport
+      menu.style.left = '0'; menu.style.top = '0';
+      document.body.appendChild(menu);
+      const mw = menu.offsetWidth, mh = menu.offsetHeight;
+      menu.style.left = Math.min(x, window.innerWidth  - mw - 8) + 'px';
+      menu.style.top  = Math.min(y, window.innerHeight - mh - 8) + 'px';
+      ctxMenu = menu;
+    }
+
+    document.getElementById('tbody').addEventListener('touchstart', e => {
+      const tr = e.target.closest('tr[data-name]');
+      if (!tr) return;
+      const touch = e.touches[0];
+      longPressTimer = setTimeout(() => {
+        navigator.vibrate?.(40);
+        showCtxMenu(tr, touch.clientX, touch.clientY);
+      }, 500);
+    }, { passive: true });
+
+    document.getElementById('tbody').addEventListener('touchend',  () => clearTimeout(longPressTimer), { passive: true });
+    document.getElementById('tbody').addEventListener('touchmove', () => clearTimeout(longPressTimer), { passive: true });
+
+    document.getElementById('tbody').addEventListener('contextmenu', e => {
+      const tr = e.target.closest('tr[data-name]');
+      if (!tr) return;
+      e.preventDefault();
+    });
+
+    document.addEventListener('touchstart', e => {
+      if (ctxMenu && !ctxMenu.contains(e.target)) dismissCtxMenu();
+    }, { passive: true });
 
     async function action(btn, url) {
       actionInProgress = true;
