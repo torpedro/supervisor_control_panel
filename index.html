@@ -345,9 +345,9 @@
         <th class="sortable" data-col="name">Name</th>
         <th class="sortable" data-col="state">State</th>
         <th class="sortable" data-col="pid">PID</th>
-        <th class="sortable" data-col="uptime">Uptime</th>
-        <th class="sortable" data-col="cpu">CPU%</th>
-        <th class="sortable" data-col="rss">RSS</th>
+        <th class="sortable" data-col="uptime" style="text-align:right">Uptime</th>
+        <th class="sortable" data-col="cpu" style="text-align:right">CPU%</th>
+        <th class="sortable" data-col="rss" style="text-align:right">RSS</th>
         <th class="sortable" data-col="description">Description</th>
         <th id="th-actions"><input type="checkbox" id="check-all" onchange="toggleAll(this.checked)"> Actions</th>
       </tr>
@@ -380,17 +380,40 @@
     let actionInProgress = false;
     let sortCol = 'name', sortDir = 'asc';
 
+    function fullName(p) {
+      return p.group && p.group !== p.name ? `${p.group}:${p.name}` : p.name;
+    }
+
+    function formatBytes(bytes) {
+      if (!bytes) return '-';
+      if (bytes >= 1024 ** 3) return (bytes / 1024 ** 3).toFixed(1) + 'G';
+      if (bytes >= 1024 ** 2) return (bytes / 1024 ** 2).toFixed(1) + 'M';
+      if (bytes >= 1024)      return (bytes / 1024).toFixed(1) + 'K';
+      return bytes + 'B';
+    }
+
+    function formatUptime(secs) {
+      if (!secs) return '-';
+      const d = Math.floor(secs / 86400);
+      const h = Math.floor((secs % 86400) / 3600);
+      const m = Math.floor((secs % 3600) / 60);
+      const s = String(secs % 60).padStart(2, '0');
+      const parts = [];
+      if (d) parts.push(`${d}d`);
+      if (d || h) parts.push(`${String(h).padStart(2, '0')}h`);
+      if (d || h || m) parts.push(`${String(m).padStart(2, '0')}m`);
+      parts.push(`${s}s`);
+      return parts.join(' ');
+    }
+
     const SORT_KEY = {
-      name:        p => p.name.toLowerCase(),
+      name:        p => fullName(p).toLowerCase(),
       state:       p => p.state,
       pid:         p => parseInt(p.pid) || 0,
-      uptime:      p => {
-        const m = p.uptime.match(/(?:(\d+)h)?\s*(?:(\d+)m)?\s*(?:(\d+)s)?/);
-        return m ? (+m[1]||0)*3600 + (+m[2]||0)*60 + (+m[3]||0) : 0;
-      },
+      uptime:      p => p.uptime_seconds,
       cpu:         p => p.cpu_raw,
-      rss:         p => p.rss_kb,
-      swap:        p => p.swap_kb,
+      rss:         p => p.rss_bytes,
+      swap:        p => p.swap_bytes,
       description: p => p.description.toLowerCase(),
     };
 
@@ -459,7 +482,7 @@
       document.getElementById('sum-running').textContent = running;
       document.getElementById('sum-stopped').textContent = stopped;
       document.getElementById('sum-cpu').textContent = data.total_cpu;
-      document.getElementById('sum-rss').textContent = data.total_rss;
+      document.getElementById('sum-rss').textContent = formatBytes(data.total_rss_bytes);
 
       const checked = new Set([...document.querySelectorAll('.row-check:checked')]
         .map(cb => cb.closest('tr').dataset.name));
@@ -468,30 +491,31 @@
 
       document.getElementById('tbody').innerHTML = sortedProcesses(data.processes).map(p => {
         const sc = p.state === 'RUNNING' ? 'running' : p.state === 'EXITED' ? 'exited' : p.state === 'FATAL' ? 'fatal' : 'stopped';
-        const startUrl   = `${base}/process/${encodeURIComponent(p.name)}/start`;
-        const stopUrl    = `${base}/process/${encodeURIComponent(p.name)}/stop`;
-        const restartUrl = `${base}/process/${encodeURIComponent(p.name)}/restart`;
-        const logUrl     = `${base}/process/${encodeURIComponent(p.name)}/log`;
+        const fn = fullName(p);
+        const startUrl   = `${base}/process/${encodeURIComponent(fn)}/start`;
+        const stopUrl    = `${base}/process/${encodeURIComponent(fn)}/stop`;
+        const restartUrl = `${base}/process/${encodeURIComponent(fn)}/restart`;
+        const logUrl     = `${base}/process/${encodeURIComponent(fn)}/log`;
         const btns = p.state === 'RUNNING'
           ? `<button class="btn btn-stop"    onclick="confirm(this,'${stopUrl}','stop')">Stop</button>
              <button class="btn btn-restart" onclick="confirm(this,'${restartUrl}','restart')">Restart</button>`
           : `<button class="btn btn-start"   onclick="action(this,'${startUrl}')">Start</button>`;
-        const isChecked = checked.has(p.name) ? 'checked' : '';
-        const isOpen = expanded.has(p.name);
-        const actions = `<input type="checkbox" class="row-check" ${isChecked} onchange="updateBulkBar()"> ${btns} <button class="btn btn-log" onclick="openLogModal(event,'${p.name}','${logUrl}')">Logs</button>`;
-        const rows = [`<tr class="${sc}" data-name="${p.name}" data-state="${p.state}"
+        const isChecked = checked.has(fn) ? 'checked' : '';
+        const isOpen = expanded.has(fn);
+        const actions = `<input type="checkbox" class="row-check" ${isChecked} onchange="updateBulkBar()"> ${btns} <button class="btn btn-log" onclick="openLogModal(event,'${fn}','${logUrl}')">Logs</button>`;
+        const rows = [`<tr class="${sc}" data-name="${fn}" data-state="${p.state}"
                     data-start="${startUrl}" data-stop="${stopUrl}" data-restart="${restartUrl}">
           <td style="padding-right:0;width:1rem"><button class="btn-expand${isOpen ? ' open' : ''}" onclick="toggleDetail(this)" title="Show config">▶</button></td>
-          <td>${p.name}</td>
+          <td>${fn}</td>
           <td><span class="badge ${sc}">${p.state}</span></td>
           <td>${p.pid}</td>
-          <td>${p.uptime}</td>
-          <td>${p.cpu}</td>
-          <td>${p.rss}</td>
+          <td style="text-align:right">${formatUptime(p.uptime_seconds)}</td>
+          <td style="text-align:right">${p.cpu}</td>
+          <td style="text-align:right">${formatBytes(p.rss_bytes)}</td>
           <td class="desc">${p.description}</td>
           <td class="actions">${actions}</td>
         </tr>`];
-        if (isOpen) rows.push(detailRow(p.name));
+        if (isOpen) rows.push(detailRow(fn));
         return rows.join('');
       }).join('');
 

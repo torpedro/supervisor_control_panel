@@ -147,6 +147,7 @@ def collect_status():
         group = proc.get("group", "")
         full_name = f"{group}:{name}" if group and group != name else name
         state = proc.get("statename", "UNKNOWN")
+
         pid = proc.get("pid", 0)
         description = proc.get("description", "")
 
@@ -154,27 +155,22 @@ def collect_status():
         start = proc.get("start", 0)
         if state == "RUNNING" and start:
             uptime_secs = now - start
-            hours, rem = divmod(uptime_secs, 3600)
-            mins, secs = divmod(rem, 60)
-            uptime = f"{hours}h {mins}m {secs}s"
         else:
             uptime_secs = 0
-            uptime = "-"
 
         rss, swap = get_memory_kb(pid) if pid else (None, None)
         pct = cpu_pct.get(pid)
         rows.append(
             {
-                "name": full_name,
+                "name": name,
+                "group": group,
+                "full_name": full_name,
                 "state": state,
                 "pid": str(pid) if pid else "-",
-                "uptime": uptime,
                 "cpu": f"{pct:.1f}%" if pct is not None else "-",
-                "rss": fmt_kb(rss),
-                "swap": fmt_kb(swap),
                 "description": description,
-                "rss_kb": rss or 0,
-                "swap_kb": swap or 0,
+                "rss_bytes": (rss or 0) * 1024,
+                "swap_bytes": (swap or 0) * 1024,
                 "cpu_raw": pct or 0.0,
                 "uptime_seconds": uptime_secs,
             }
@@ -205,8 +201,8 @@ async def status_json():
         return {
             "processes": rows,
             "total_cpu": f"{sum(r['cpu_raw'] for r in rows):.1f}%",
-            "total_rss": fmt_kb(sum(r["rss_kb"] for r in rows)),
-            "total_swap": fmt_kb(sum(r["swap_kb"] for r in rows)),
+            "total_rss_bytes": sum(r["rss_bytes"] for r in rows),
+            "total_swap_bytes": sum(r["swap_bytes"] for r in rows),
         }
     except (ConnectionRefusedError, FileNotFoundError) as exc:
         return JSONResponse({"error": str(exc)}, status_code=503)
@@ -237,7 +233,7 @@ async def metrics():
         "gauge",
         [
             (
-                {"name": r["name"], "state": r["state"]},
+                {"name": r["full_name"], "state": r["state"]},
                 1 if r["state"] == "RUNNING" else 0,
             )
             for r in rows
@@ -247,25 +243,25 @@ async def metrics():
         "supervisor_process_cpu_percent",
         "CPU usage of the process in percent",
         "gauge",
-        [({"name": r["name"]}, r["cpu_raw"]) for r in rows],
+        [({"name": r["full_name"]}, r["cpu_raw"]) for r in rows],
     )
     out += prom(
         "supervisor_process_rss_bytes",
         "Resident set size of the process in bytes",
         "gauge",
-        [({"name": r["name"]}, r["rss_kb"] * 1024) for r in rows],
+        [({"name": r["full_name"]}, r["rss_bytes"]) for r in rows],
     )
     out += prom(
         "supervisor_process_swap_bytes",
         "Swap usage of the process in bytes",
         "gauge",
-        [({"name": r["name"]}, r["swap_kb"] * 1024) for r in rows],
+        [({"name": r["full_name"]}, r["swap_bytes"]) for r in rows],
     )
     out += prom(
         "supervisor_process_uptime_seconds",
         "Uptime of the process in seconds",
         "gauge",
-        [({"name": r["name"]}, r["uptime_seconds"]) for r in rows],
+        [({"name": r["full_name"]}, r["uptime_seconds"]) for r in rows],
     )
 
     return Response(
